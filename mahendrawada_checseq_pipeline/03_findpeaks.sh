@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_findpeaks
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=1G
-#SBATCH --time=00:10:00
+#SBATCH --time=01:00:00
 #SBATCH -o logs/findpeaks_%a.log
 #SBATCH -e logs/findpeaks_%a.log
 #SBATCH --container=oras://community.wave.seqera.io/library/homer_samtools:0e83b23821fcb7e6
@@ -12,23 +12,39 @@ set -euo pipefail
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
+# Usage: 03_findpeaks.sh <lookup_file> [bam_type]
+#   bam_type: "nuclear" (default) or "full" - must match whatever BAM_TYPE
+#   was used to build the sample's tag directory in 02_maketagdir_samples.sh,
+#   since the genome size below is the statistical background denominator
+#   for HOMER's Poisson model and needs to reflect the actual sequence space
+#   the tag directory was built over.
 LOOKUP_FILE="$1"
+BAM_TYPE="${2:-nuclear}"
 OUTPUT_DIR="results"
 LOG_DIR="logs"
 CONTROL_TAG_DIR="${OUTPUT_DIR}/tag_dirs/control_MNase"
-# sacCer3 nuclear genome size (sum of chrI-chrXVI lengths, excludes chrM/85779bp
-# since all BAMs going into tag directories are nuclear-only). Computed from
-# samtools coverage endpos values: 230218+813184+316620+1531933+576874+270161
-# +1090940+562643+439888+745751+666816+1078177+924431+784333+1091291+948066
-GENOME_SIZE=12071326
 
+# sacCer3 genome size, chosen based on bam_type:
+#   nuclear -> 12071326 (sum of chrI-chrXVI only, excludes chrM/85779bp)
+#              230218+813184+316620+1531933+576874+270161+1090940+562643
+#              +439888+745751+666816+1078177+924431+784333+1091291+948066
+#   full    -> 12157105 (chrI-chrXVI + chrM, i.e. 12071326 + 85779)
+case "${BAM_TYPE}" in
+    nuclear) GENOME_SIZE=12071326 ;;
+    full)    GENOME_SIZE=12157105 ;;
+    *)
+        echo "ERROR: Invalid bam_type '${BAM_TYPE}' - must be 'nuclear' or 'full'"
+        exit 1
+        ;;
+esac
 
 # HOMER findPeaks parameters (from methods)
 # -C 0: disable clonal filtering (appropriate for MNase-treated data)
 # -L 6: 6-fold enrichment over local background (vs. default 4-fold)
 # -F 10: 10-fold enrichment over control (vs. default 4-fold)
-# -gsize: explicit nuclear genome size, rather than each sample re-estimating
-#         its own slightly different value from tag coverage
+# -gsize: explicit genome size (nuclear- or full-genome, per bam_type above),
+#         rather than each sample re-estimating its own slightly different
+#         value from tag coverage
 FINDPEAKS_PARAMS="-o auto -C 0 -L 6 -F 10 -gsize ${GENOME_SIZE}"
 
 # ============================================================================
@@ -56,6 +72,7 @@ PEAK_DIR="$(dirname "${OUTPUT_PEAK_FILE}")"
 mkdir -p "${PEAK_DIR}"
 
 echo "Task ${SLURM_ARRAY_TASK_ID}: Calling peaks for ${REGULATOR}_${REPLICATE}"
+echo "  BAM type: ${BAM_TYPE} (genome size: ${GENOME_SIZE})"
 echo "  Sample tag directory: ${SAMPLE_TAG_DIR}"
 echo "  Control tag directory: ${CONTROL_TAG_DIR}"
 echo "  Output: ${OUTPUT_PEAK_FILE}"
