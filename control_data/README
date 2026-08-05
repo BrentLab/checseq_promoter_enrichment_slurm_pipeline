@@ -1,0 +1,20 @@
+from_correspondance is control data shared by Mahendrawada in 082026
+in response to a query about control data used in the GEO accession.
+
+This does recreate the peaks/results nearly exactly using this 
+workflow. The following settings were used to create the 
+components in from_correspondance:
+
+- dmel coverage: sbatch --array=3 mahendrawada_checseq_pipeline/01b_dmel_normalized_coverage.sh mahendrawada_checseq_pipeline/freemnase_lookup.txt full
+
+Which uses full alignment (including chrM)
+
+- tag_dir: sbatch mahendrawada_checseq_pipeline/maketagdir_control.sh results/bams/from_correspondance/A/from_correspondance_A.bam results/bams/from_correspondance/A/from_correspondance_A_samtools_stats.txt --authors_orig
+
+Which also uses the full alignment and despite passing in the samtools stats, it allows homer to infer fragment length and 
+genome size to match original author's scripts
+
+- 5p filtering and coverage: in this case, this is only the nuclear locations b/c the 'include regions' used (and provided)
+  only includes the nuclear chr. Note that this is used for promoter enrichment, not recreating the authors results
+
+- align: both the yeast alignment, and then the unmapped reads are aligned to the dmel using the scripts provided here directly. 
