@@ -84,7 +84,7 @@ read -r REGULATOR REPLICATE FASTQ_R1 FASTQ_R2 <<< "$LINE"
 # Corresponding BAM from 01_align.sh (full or nuclear-only, per BAM_TYPE above)
 INPUT_BAM="${OUTPUT_DIR}/bams/${REGULATOR}/${REPLICATE}/${REGULATOR}_${REPLICATE}${BAM_SUFFIX}"
 STATS_FILE="${OUTPUT_DIR}/bams/${REGULATOR}/${REPLICATE}/${REGULATOR}_${REPLICATE}_samtools_stats.txt"
-TAG_DIR="${OUTPUT_DIR}/tag_dirs/${REGULATOR}_${REPLICATE}"
+TAG_DIR="${OUTPUT_DIR}/tag_dirs/${REGULATOR}/${REPLICATE}"
 
 echo "Task ${SLURM_ARRAY_TASK_ID}: Creating tag directory for ${REGULATOR}_${REPLICATE}"
 echo "  BAM type: ${BAM_TYPE}"

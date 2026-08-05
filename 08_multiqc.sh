@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_multiqc
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
-#SBATCH --time=06:00:00
+#SBATCH --time=00:30:00
 #SBATCH -o logs/multiqc.log
 #SBATCH -e logs/multiqc.log
 #SBATCH --container=docker://ghcr.io/multiqc/multiqc:pdf-dev
@@ -39,10 +39,21 @@ echo ""
 #   - bowtie2 alignment logs                 (logs/*_bowtie.log)
 #   - HOMER tag directory QC                 (results/tag_dirs/**/tagInfo.txt etc.)
 # We point it at both results/ and logs/ so it picks up everything in one pass.
+#
+# --dirs --dirs-depth 2: tag directories live at
+# results/tag_dirs/{regulator}/{replicate}/, and HOMER's tagInfo.txt etc.
+# don't carry the regulator/replicate in their own filename - MultiQC's
+# default sample naming for these would collapse to just the tag
+# directory's own leaf folder name (e.g. "A"), which every regulator's
+# replicate A shares, causing name collisions across the whole tag_dirs
+# tree. --dirs prepends parent directory names to disambiguate; depth 2
+# picks up both the replicate and regulator levels (e.g. "RME1_A"),
+# recovering unique names.
 multiqc \
     "${OUTPUT_DIR}" \
     "${LOG_DIR}" \
     --outdir "${MULTIQC_OUT}" \
+    --dirs --dirs-depth 2 \
     --force \
     2>&1 | tee "${LOG_DIR}/multiqc_run.log"
 

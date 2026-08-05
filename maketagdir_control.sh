@@ -37,7 +37,7 @@ set -euo pipefail
 #    before deciding how to combine them, or for any analysis that wants a
 #    per-replicate control rather than the single merged one.
 #    bam_type: "nuclear" (default) or "full", same convention as elsewhere.
-#    Output: results/tag_dirs/{regulator}_{replicate}/ (flat naming, matching
+#    Output: results/tag_dirs/{regulator}/{replicate}/ (nested, matching
 #    02_maketagdir_samples.sh's convention for regular samples - this is
 #    deliberately NOT named "control_MNase", so it never collides with the
 #    single combined control tag directory from direct mode).
@@ -118,7 +118,7 @@ if [[ "${MODE}" == "lookup" ]]; then
 
     CONTROL_BAM="${OUTPUT_DIR}/bams/${REGULATOR}/${REPLICATE}/${REGULATOR}_${REPLICATE}${BAM_SUFFIX}"
     CONTROL_STATS_FILE="${OUTPUT_DIR}/bams/${REGULATOR}/${REPLICATE}/${REGULATOR}_${REPLICATE}_samtools_stats.txt"
-    CONTROL_TAG_DIR="${OUTPUT_DIR}/tag_dirs/${REGULATOR}_${REPLICATE}"
+    CONTROL_TAG_DIR="${OUTPUT_DIR}/tag_dirs/${REGULATOR}/${REPLICATE}"
     SAMPLE_LABEL="${REGULATOR}_${REPLICATE}"
 
 else

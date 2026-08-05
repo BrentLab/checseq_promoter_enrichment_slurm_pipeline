@@ -232,8 +232,12 @@ results/
 │       (generated for the S. cerevisiae BAM and, separately, the dmel BAM)
 ├── tag_dirs/
 │   ├── control_MNase/               (built by maketagdir_control.sh)
-│   └── {regulator}_{replicate}/     (flat naming - NOT nested - so every
-│                                     sample gets a unique name in MultiQC)
+│   └── {regulator}/{replicate}/     (nested, matching every other output
+│                                     subdirectory - see 08_multiqc.sh's
+│                                     --dirs --dirs-depth 2 for how sample
+│                                     names stay unique in MultiQC despite
+│                                     every regulator sharing leaf names
+│                                     like "A"/"B"/"C")
 ├── peaks/{regulator}/{replicate}/
 │   ├── *_peaks.txt              (HOMER native format)
 │   ├── *_peaks.bed, *_peaks_summits.txt
@@ -306,8 +310,8 @@ replicate instead of a single combined one:
 ```bash
 sbatch --array=1-2 maketagdir_control.sh --lookup freemnase_lookup.txt nuclear
 ```
-This writes to `results/tag_dirs/{regulator}_{replicate}/` (e.g.
-`results/tag_dirs/free_mnase_A`) - flat naming matching
+This writes to `results/tag_dirs/{regulator}/{replicate}/` (e.g.
+`results/tag_dirs/free_mnase/A`) - nested, matching
 `02_maketagdir_samples.sh`'s convention, deliberately distinct from the
 singular `control_MNase` directory step 3 produces, so the two never
 collide. This is independent of, and doesn't replace, steps 1-3 above -

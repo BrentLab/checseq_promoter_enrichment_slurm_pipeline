@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_findpeaks
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=1G
-#SBATCH --time=02:00:00
+#SBATCH --time=00:10:00
 #SBATCH -o logs/findpeaks_%a.log
 #SBATCH -e logs/findpeaks_%a.log
 #SBATCH --container=oras://community.wave.seqera.io/library/homer_samtools:0e83b23821fcb7e6
@@ -97,7 +97,7 @@ fi
 # Parse TSV: regulator_symbol, replicate, fastq_1, fastq_2
 read -r REGULATOR REPLICATE FASTQ_R1 FASTQ_R2 <<< "$LINE"
 
-SAMPLE_TAG_DIR="${OUTPUT_DIR}/tag_dirs/${REGULATOR}_${REPLICATE}"
+SAMPLE_TAG_DIR="${OUTPUT_DIR}/tag_dirs/${REGULATOR}/${REPLICATE}"
 OUTPUT_PEAK_FILE="${OUTPUT_DIR}/peaks/${REGULATOR}/${REPLICATE}/${REGULATOR}_${REPLICATE}_peaks.txt"
 
 # Create sample-specific peak directory (must come after OUTPUT_PEAK_FILE is set)
