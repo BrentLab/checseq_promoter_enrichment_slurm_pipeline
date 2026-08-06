@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_findpeaks
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=1G
-#SBATCH --time=00:10:00
+#SBATCH --time=06:00:00
 #SBATCH -o logs/findpeaks_%a.log
 #SBATCH -e logs/findpeaks_%a.log
 #SBATCH --container=oras://community.wave.seqera.io/library/homer_samtools:0e83b23821fcb7e6

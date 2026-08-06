@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_tagdir_samples
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
-#SBATCH --time=00:30:00
+#SBATCH --time=10:00:00
 #SBATCH -o logs/tagdir_samples_%a.log
 #SBATCH -e logs/tagdir_samples_%a.log
 #SBATCH --container=oras://community.wave.seqera.io/library/homer_samtools:0e83b23821fcb7e6

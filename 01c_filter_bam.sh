@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_filter_bam
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=4G
-#SBATCH --time=00:30:00
+#SBATCH --time=02:00:00
 #SBATCH -o logs/filter_bam_%a.log
 #SBATCH -e logs/filter_bam_%a.log
 #SBATCH --container=docker://quay.io/biocontainers/samtools:1.21--h50ea8bc_0

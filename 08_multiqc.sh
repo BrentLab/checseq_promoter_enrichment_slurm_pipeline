@@ -2,7 +2,7 @@
 #SBATCH --job-name=chec_multiqc
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
-#SBATCH --time=00:30:00
+#SBATCH --time=02:30:00
 #SBATCH -o logs/multiqc.log
 #SBATCH -e logs/multiqc.log
 #SBATCH --container=docker://ghcr.io/multiqc/multiqc:pdf-dev
