@@ -2,8 +2,9 @@ from_correspondance is control data shared by Mahendrawada in 082026
 in response to a query about control data used in the GEO accession.
 
 This does recreate the peaks/results nearly exactly using this 
-workflow. The following settings were used to create the 
-components in from_correspondance:
+workflow AND including the mito reads.
+The following settings were used to create the components in
+`from_correspondance`:
 
 - dmel coverage: sbatch --array=3 mahendrawada_checseq_pipeline/01b_dmel_normalized_coverage.sh mahendrawada_checseq_pipeline/freemnase_lookup.txt full
 

@@ -1,4 +1,2 @@
 regulator_symbol	replicate	fastq_1	fastq_2
-free_mnase	rep1	/ref/mblab/data/yeast_data/reprocess_mahendrawada/data/fastq/SRX20967463_SRR25220649_1.fastq.gz	/ref/mblab/data/yeast_data/reprocess_mahendrawada/data/fastq/SRX20967463_SRR25220649_2.fastq.gz
-free_mnase	rep2	/ref/mblab/data/yeast_data/reprocess_mahendrawada/data/fastq/SRX20967464_SRR25220648_1.fastq.gz	/ref/mblab/data/yeast_data/reprocess_mahendrawada/data/fastq/SRX20967464_SRR25220648_2.fastq.gz
 from_correspondance	A	/ref/mblab/data/yeast_data/reprocess_mahendrawada/FMNASEBDF2_A_R1.fastq.gz	/ref/mblab/data/yeast_data/reprocess_mahendrawada/FMNASEBDF2_A_R2.fastq.gz
