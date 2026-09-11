@@ -12,12 +12,42 @@ set -euo pipefail
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Usage: 05_annotatepeaks.sh <lookup_file>
-LOOKUP_FILE="$1"
-GENOME_FASTA="/ref/mblab/data/S288C_R64/S288C_reference_genome_R64-5-1_20240529/S288C_reference_sequence_R64-5-1_20240529_chr_normalized.fa"
-GTF_FILE="/ref/mblab/data/yeast_data/reprocess_mahendrawada/mahendrawada_slurm_pipeline/sacCer3.ensGene.gtf"
+# Usage: 05_annotatepeaks.sh <lookup_file> --genome-fasta=<path> --gtf-file=<path>
+#   --genome-fasta=<path> and --gtf-file=<path> are both required (no default
+#   - these vary by organism/genome build). Can appear anywhere in the args.
 OUTPUT_DIR="results"
 LOG_DIR="logs"
+GENOME_FASTA=""
+GTF_FILE=""
+
+POSITIONAL=()
+for arg in "$@"; do
+    case "${arg}" in
+        --genome-fasta=*)
+            GENOME_FASTA="${arg#--genome-fasta=}"
+            ;;
+        --gtf-file=*)
+            GTF_FILE="${arg#--gtf-file=}"
+            ;;
+        *)
+            POSITIONAL+=("${arg}")
+            ;;
+    esac
+done
+
+LOOKUP_FILE="${POSITIONAL[0]:?ERROR: lookup_file is required}"
+
+if [[ -z "${GENOME_FASTA}" ]]; then
+    echo "ERROR: --genome-fasta=<path> is required (no default - this varies by organism/genome build)"
+    echo "Usage: 05_annotatepeaks.sh <lookup_file> --genome-fasta=<path> --gtf-file=<path>"
+    exit 1
+fi
+
+if [[ -z "${GTF_FILE}" ]]; then
+    echo "ERROR: --gtf-file=<path> is required (no default - this varies by organism/genome build)"
+    echo "Usage: 05_annotatepeaks.sh <lookup_file> --genome-fasta=<path> --gtf-file=<path>"
+    exit 1
+fi
 
 # ============================================================================
 # VALIDATE INPUTS
