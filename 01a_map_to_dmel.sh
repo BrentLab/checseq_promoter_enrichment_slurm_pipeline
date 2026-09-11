@@ -15,21 +15,24 @@ set -uo pipefail
 # Two calling conventions:
 #
 # 1. LOOKUP MODE (array job, per-sample - the normal pipeline path):
-#      sbatch --array=1-N 01a_map_to_dmel.sh <lookup_file>
+#      sbatch --array=1-N 01a_map_to_dmel.sh --bowtie-index=<path> <lookup_file>
 #    Derives the unmapped-reads FASTQs (produced by 01_align.sh) and all
 #    output paths from the lookup row at SLURM_ARRAY_TASK_ID.
 #
 # 2. DIRECT MODE (single job, no sample sheet - e.g. manually-combined
 #    replicate FASTQs, same situation 01b_dmel_normalized_coverage.sh and
 #    maketagdir_control.sh handle for their own inputs):
-#      sbatch 01a_map_to_dmel.sh --fastq-r1 <r1.fastq.gz> \
+#      sbatch 01a_map_to_dmel.sh --bowtie-index=<path> --fastq-r1 <r1.fastq.gz> \
 #          --fastq-r2 <r2.fastq.gz> --output-name <name>
 #    Writes to results/bams/<name>/<name>_dmel.bam (+ stats/flagstats/
 #    coverage/idxstats/counts alongside it, all named <name>_dmel_*). Use
 #    this when there's no regulator/replicate row to derive paths from -
 #    e.g. unmapped R1/R2 FASTQs you've concatenated across replicates by
 #    hand.
-DMEL_BOWTIE_INDEX="/ref/mblab/data/dmelanogaster/bowtie2_index/dmel-all-chromosome-r6.65"
+#
+# --bowtie-index=<path> is required (no default - this varies by organism/
+# genome build) and can appear anywhere in the args, in either mode - it's
+# pulled out before mode detection runs.
 OUTPUT_DIR="results"
 LOG_DIR="logs"
 
@@ -37,6 +40,30 @@ LOG_DIR="logs"
 # BOWTIE PARAMETERS (same as S. cerevisiae)
 # ============================================================================
 BOWTIE_PARAMS="-I 10 -X 700 --local --very-sensitive-local --no-unal --no-mixed --no-discordant"
+
+# ============================================================================
+# PULL --bowtie-index OUT OF THE ARGS (before mode detection - see above)
+# ============================================================================
+BOWTIE_INDEX=""
+REMAINING_ARGS=()
+for arg in "$@"; do
+    case "${arg}" in
+        --bowtie-index=*)
+            BOWTIE_INDEX="${arg#--bowtie-index=}"
+            ;;
+        *)
+            REMAINING_ARGS+=("${arg}")
+            ;;
+    esac
+done
+set -- "${REMAINING_ARGS[@]}"
+
+if [[ -z "${BOWTIE_INDEX}" ]]; then
+    echo "ERROR: --bowtie-index=<path> is required (no default - this varies by organism/genome build)"
+    echo "Usage (lookup mode): 01a_map_to_dmel.sh --bowtie-index=<path> <lookup_file>"
+    echo "Usage (direct mode): 01a_map_to_dmel.sh --bowtie-index=<path> --fastq-r1 <r1.fastq.gz> --fastq-r2 <r2.fastq.gz> --output-name <name>"
+    exit 1
+fi
 
 # ============================================================================
 # MODE DETECTION AND ARGUMENT PARSING
@@ -69,7 +96,7 @@ if [[ "${MODE}" == "direct" ]]; then
 
     if [[ -z "${DIRECT_R1}" || -z "${DIRECT_R2}" || -z "${DIRECT_OUTPUT_NAME}" ]]; then
         echo "ERROR: Direct mode requires --fastq-r1, --fastq-r2, and --output-name"
-        echo "Usage: 01a_map_to_dmel.sh --fastq-r1 <r1.fastq.gz> --fastq-r2 <r2.fastq.gz> --output-name <name>"
+        echo "Usage: 01a_map_to_dmel.sh --bowtie-index=<path> --fastq-r1 <r1.fastq.gz> --fastq-r2 <r2.fastq.gz> --output-name <name>"
         exit 1
     fi
 
@@ -147,7 +174,7 @@ echo "Aligning unmapped reads to D. melanogaster..."
 bowtie2 \
     -p 8 \
     -q \
-    -x "${DMEL_BOWTIE_INDEX}" \
+    -x "${BOWTIE_INDEX}" \
     ${BOWTIE_PARAMS} \
     -1 <(gunzip -c "${UNMAPPED_R1}") \
     -2 <(gunzip -c "${UNMAPPED_R2}") \

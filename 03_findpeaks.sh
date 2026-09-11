@@ -12,25 +12,25 @@ set -euo pipefail
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Usage: 03_findpeaks.sh <lookup_file> [bam_type] [--control-tag-dir=<path>] [--authors_orig]
-#   bam_type: "nuclear" (default) or "full" - must match whatever BAM_TYPE
-#   was used to build the sample's tag directory in 02_maketagdir_samples.sh,
-#   since the genome size below is the statistical background denominator
-#   for HOMER's Poisson model and needs to reflect the actual sequence space
-#   the tag directory was built over. Ignored (no -gsize passed at all) if
-#   --authors_orig is set - see below.
+# Usage: 03_findpeaks.sh <lookup_file> [bam_type] [--control-tag-dir=<path>] [--genome-size=<n>]
+#   bam_type: "nuclear" (default) or "full" - informational only now (used in
+#   the task summary echo below); no longer affects genome size, since that's
+#   now passed explicitly via --genome-size (or omitted) rather than looked
+#   up from a nuclear/full constant.
 #   --control-tag-dir=<path>: path to the control tag directory built by
 #   maketagdir_control.sh (default: results/tag_dirs/control_MNase, matching
 #   that script's own default output location). Can appear anywhere in the
 #   args, alongside the positional lookup_file/bam_type.
-#   --authors_orig: skip passing -gsize to findPeaks entirely, matching the
-#   original Mahendrawada et al. findPeaks calls (which never passed -gsize
-#   and let HOMER auto-estimate genome size from the tag directory itself).
-#   Can appear anywhere in the args.
+#   --genome-size=<n>: explicit genome size passed to findPeaks' -gsize flag
+#   (the statistical background denominator for HOMER's Poisson model).
+#   Optional - if omitted, -gsize is not passed to findPeaks at all, and
+#   HOMER auto-estimates genome size from the tag directory itself instead
+#   (this also matches the original Mahendrawada et al. findPeaks calls,
+#   which never passed -gsize). Can appear anywhere in the args.
 OUTPUT_DIR="results"
 LOG_DIR="logs"
 CONTROL_TAG_DIR="${OUTPUT_DIR}/tag_dirs/control_MNase"
-AUTHORS_ORIG=false
+GENOME_SIZE=""
 
 POSITIONAL=()
 for arg in "$@"; do
@@ -38,8 +38,8 @@ for arg in "$@"; do
         --control-tag-dir=*)
             CONTROL_TAG_DIR="${arg#--control-tag-dir=}"
             ;;
-        --authors_orig)
-            AUTHORS_ORIG=true
+        --genome-size=*)
+            GENOME_SIZE="${arg#--genome-size=}"
             ;;
         *)
             POSITIONAL+=("${arg}")
@@ -50,15 +50,8 @@ done
 LOOKUP_FILE="${POSITIONAL[0]:?ERROR: lookup_file is required}"
 BAM_TYPE="${POSITIONAL[1]:-nuclear}"
 
-# sacCer3 genome size, chosen based on bam_type (unused - no -gsize passed at
-# all - if --authors_orig is set):
-#   nuclear -> 12071326 (sum of chrI-chrXVI only, excludes chrM/85779bp)
-#              230218+813184+316620+1531933+576874+270161+1090940+562643
-#              +439888+745751+666816+1078177+924431+784333+1091291+948066
-#   full    -> 12157105 (chrI-chrXVI + chrM, i.e. 12071326 + 85779)
 case "${BAM_TYPE}" in
-    nuclear) GENOME_SIZE=12071326 ;;
-    full)    GENOME_SIZE=12157105 ;;
+    nuclear|full) ;;
     *)
         echo "ERROR: Invalid bam_type '${BAM_TYPE}' - must be 'nuclear' or 'full'"
         exit 1
@@ -69,15 +62,13 @@ esac
 # -C 0: disable clonal filtering (appropriate for MNase-treated data)
 # -L 6: 6-fold enrichment over local background (vs. default 4-fold)
 # -F 10: 10-fold enrichment over control (vs. default 4-fold)
-# -gsize: explicit genome size (nuclear- or full-genome, per bam_type above),
-#         rather than each sample re-estimating its own slightly different
-#         value from tag coverage. Omitted entirely with --authors_orig,
-#         matching the original scripts, which never passed -gsize and let
-#         findPeaks auto-estimate genome size from the tag directory instead.
-if [[ "${AUTHORS_ORIG}" == "true" ]]; then
-    FINDPEAKS_PARAMS="-o auto -C 0 -L 6 -F 10"
-else
+# -gsize: only included if --genome-size was provided; otherwise omitted
+#         entirely, letting findPeaks auto-estimate genome size from the tag
+#         directory instead.
+if [[ -n "${GENOME_SIZE}" ]]; then
     FINDPEAKS_PARAMS="-o auto -C 0 -L 6 -F 10 -gsize ${GENOME_SIZE}"
+else
+    FINDPEAKS_PARAMS="-o auto -C 0 -L 6 -F 10"
 fi
 
 # ============================================================================
@@ -105,7 +96,8 @@ PEAK_DIR="$(dirname "${OUTPUT_PEAK_FILE}")"
 mkdir -p "${PEAK_DIR}"
 
 echo "Task ${SLURM_ARRAY_TASK_ID}: Calling peaks for ${REGULATOR}_${REPLICATE}"
-echo "  BAM type: ${BAM_TYPE} (genome size: $( [[ "${AUTHORS_ORIG}" == "true" ]] && echo "auto-estimated by HOMER (--authors_orig mode)" || echo "${GENOME_SIZE}" ))"
+echo "  BAM type: ${BAM_TYPE}"
+echo "  Genome size: $( [[ -n "${GENOME_SIZE}" ]] && echo "${GENOME_SIZE}" || echo "auto-estimated by HOMER (--genome-size not provided)" )"
 echo "  Sample tag directory: ${SAMPLE_TAG_DIR}"
 echo "  Control tag directory: ${CONTROL_TAG_DIR}"
 echo "  Output: ${OUTPUT_PEAK_FILE}"
