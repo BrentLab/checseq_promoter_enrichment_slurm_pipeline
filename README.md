@@ -8,7 +8,6 @@ from FASTQ to annotated peaks, following the methods from Mahendrawada et al.
 
 | Script | Purpose |
 |---|---|
-| `00_prepare.sh` | Validates the sample lookup file and FASTQ paths |
 | `maketagdir_control.sh` | **Manual, one-time step.** Builds the HOMER tag directory for the free MNase control |
 | `01_align.sh` | Aligns paired-end reads to *S. cerevisiae* (bowtie2); splits output into full/nuclear/mitochondrial BAMs; writes unmapped reads to FASTQ |
 | `01a_map_to_dmel.sh` | Aligns unmapped reads from `01_align.sh` to *D. melanogaster* for spike-in normalization |
@@ -379,9 +378,6 @@ to `07_promoter_scoring.sh`/`promoter_scoring.R`).
 
 # Before each run: stage the matching archived control tag directory
 cp -r control_data/nuclear/tag_dir/control_MNase results/tag_dirs/control_MNase
-
-# Validate your lookup file
-bash 00_prepare.sh samples.tsv
 
 # Submit the rest of the pipeline (can be run from any directory)
 bash submit_pipeline.sh samples.tsv
