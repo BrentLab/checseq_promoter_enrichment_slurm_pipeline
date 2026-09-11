@@ -12,10 +12,33 @@ set -uo pipefail
 # ============================================================================
 # CONFIGURATION - Fill in these paths before running
 # ============================================================================
-LOOKUP_FILE="$1"
 SCER_BOWTIE_INDEX="/ref/mblab/data/S288C_R64/S288C_reference_genome_R64-5-1_20240529/bowtie2_index/S288C_reference_sequence_R64-5-1_20240529_chr_normalized"
 OUTPUT_DIR="results"
 LOG_DIR="logs"
+
+# Mitochondrial chromosome name, as it appears in the reference/BAM - varies
+# by organism/genome build (e.g. "chrM" for many S. cerevisiae assemblies,
+# something else entirely for other reference genomes like KN99). Override
+# with --mito-chrom=<name>; can appear anywhere in the args.
+MITO_CHROM="chrM"
+
+# ============================================================================
+# ARGUMENT PARSING
+# ============================================================================
+# Usage: 01_align.sh <lookup_file> [--mito-chrom=<name>]
+POSITIONAL=()
+for arg in "$@"; do
+    case "${arg}" in
+        --mito-chrom=*)
+            MITO_CHROM="${arg#--mito-chrom=}"
+            ;;
+        *)
+            POSITIONAL+=("${arg}")
+            ;;
+    esac
+done
+
+LOOKUP_FILE="${POSITIONAL[0]:?ERROR: lookup_file is required. Usage: 01_align.sh <lookup_file> [--mito-chrom=<name>]}"
 
 # ============================================================================
 # BOWTIE PARAMETERS (from methods) - paired-end
@@ -33,6 +56,7 @@ WORK_TMP=$(mktemp -d "${TMPDIR}/chec_align_${SLURM_ARRAY_TASK_ID}.XXXXXX")
 trap "rm -rf ${WORK_TMP}" EXIT
 
 echo "Using temporary directory: ${WORK_TMP}"
+echo "Mitochondrial chromosome name: ${MITO_CHROM}"
 
 # Get the task line from lookup file (skip header)
 LINE=$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" "${LOOKUP_FILE}")
@@ -166,7 +190,7 @@ fi
 # ============================================================================
 # PROCESS ALIGNMENT RESULTS
 # ============================================================================
-echo "Converting SAM to sorted BAM (all mapped reads, including chrM)..."
+echo "Converting SAM to sorted BAM (all mapped reads, including ${MITO_CHROM})..."
 samtools view -b -h -F 4 "${TEMP_SAM}" | \
     samtools sort -@ 4 -o "${FULL_BAM}" -
 
@@ -174,9 +198,9 @@ echo "Indexing full BAM..."
 samtools index "${FULL_BAM}"
 
 # ============================================================================
-# GENERATE STATISTICS ON FULL BAM (for QC - includes chrM)
+# GENERATE STATISTICS ON FULL BAM (for QC - includes mito)
 # ============================================================================
-echo "Generating samtools statistics (full BAM, includes chrM)..."
+echo "Generating samtools statistics (full BAM, includes ${MITO_CHROM})..."
 samtools stats "${FULL_BAM}" > "${STATS_FILE}"
 samtools flagstats "${FULL_BAM}" > "${FLAGSTATS_FILE}"
 
@@ -189,15 +213,15 @@ samtools idxstats "${FULL_BAM}" > "${IDXSTATS_FILE}"
 # ============================================================================
 # SPLIT INTO NUCLEAR AND MITOCHONDRIAL BAMs
 # ============================================================================
-echo "Splitting into nuclear and mitochondrial BAMs..."
+echo "Splitting into nuclear and mitochondrial BAMs (mito chrom: ${MITO_CHROM})..."
 
 # Mitochondrial reads only (uses index, since BAM is indexed and coordinate-sorted)
-samtools view -b -h "${FULL_BAM}" chrM > "${MITO_BAM}"
+samtools view -b -h "${FULL_BAM}" "${MITO_CHROM}" > "${MITO_BAM}"
 samtools index "${MITO_BAM}"
 
-# Nuclear reads only (everything except chrM)
+# Nuclear reads only (everything except the mito chromosome)
 samtools view -h "${FULL_BAM}" | \
-    awk '$0 ~ /^@/ || $3 != "chrM" {print}' | \
+    awk -v mito="${MITO_CHROM}" '$0 ~ /^@/ || $3 != mito {print}' | \
     samtools view -b -h - > "${NUCLEAR_BAM}"
 samtools index "${NUCLEAR_BAM}"
 
@@ -207,10 +231,10 @@ echo "  Mitochondrial reads: ${MITO_COUNT} -> ${MITO_BAM}"
 echo "  Nuclear reads: ${NUCLEAR_COUNT} -> ${NUCLEAR_BAM}"
 
 # ============================================================================
-# GATHER MAPPING STATS FROM SAMTOOLS (FULL BAM, INCLUDES chrM)
+# GATHER MAPPING STATS FROM SAMTOOLS (FULL BAM, INCLUDES MITO)
 # ============================================================================
 echo ""
-echo "Mapping stats for ${REGULATOR}_${REPLICATE} (full BAM, includes chrM):"
+echo "Mapping stats for ${REGULATOR}_${REPLICATE} (full BAM, includes ${MITO_CHROM}):"
 grep "^SN" "${STATS_FILE}" | cut -f 2- | head -n 5
 
 echo ""

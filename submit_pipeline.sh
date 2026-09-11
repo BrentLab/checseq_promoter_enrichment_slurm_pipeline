@@ -3,13 +3,19 @@
 # dependencies. Run after 00_prepare.sh and configuring parameterized paths in
 # each script.
 #
-# PREREQUISITE: maketagdir_control.sh must already have been run manually to
-# build results/tag_dirs/control_MNase before running this script. It is not
-# part of the automated chain below, since the control tag directory is
-# typically built once and reused across pipeline runs rather than
-# regenerated every time.
+# OPTIONAL PREREQUISITE: if you want HOMER peak calling (03_findpeaks.sh
+# onward, plus 06_hahn_region_scoring.sh), maketagdir_control.sh must first
+# be run manually to build a control tag directory, then passed via
+# --control-tag-dir=<path>. It is not part of the automated chain below,
+# since the control tag directory is typically built once and reused across
+# pipeline runs rather than regenerated every time. Without
+# --control-tag-dir, those steps are simply skipped - see its entry below.
 #
-# Usage: submit_pipeline.sh <lookup_file> [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel [--tss-bed=TSS.bed]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]]
+# Usage: submit_pipeline.sh <lookup_file> \
+#     [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] \
+#     [--align_dmel [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] \
+#     [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] \
+#     [--control-tag-dir=PATH]
 #
 #   --bam-type=nuclear|full   (default: nuclear)
 #       Which BAM 01b_dmel_normalized_coverage.sh, 01c_filter_bam.sh,
@@ -29,8 +35,10 @@
 #                     08_multiqc
 #       NOTE: --start-at=01a_map_to_dmel or 01b_dmel_coverage also requires
 #       --align_dmel; --start-at=01c_filter_bam or 01d_genomecov_5p also
-#       requires --filter_genomecov - these steps are otherwise disabled
-#       entirely.
+#       requires --filter_genomecov; --start-at=03_findpeaks, 04_pos2bed, or
+#       05_annotatepeaks also requires --control-tag-dir;
+#       --start-at=06_hahn_region_scoring requires both --tss-bed and
+#       --control-tag-dir - these steps are otherwise disabled entirely.
 #
 #   --authors-orig            (default: off)
 #       Passes --authors_orig to both 02_maketagdir_samples.sh and
@@ -62,8 +70,11 @@
 #   --tss-bed=TSS.bed
 #       Enables 06_hahn_region_scoring.sh (the Mahendrawada 2025/Donczew &
 #       Hahn 2020 promoter-scoring method), once --align_dmel has produced
-#       coverage for every sample. Optional even with --align_dmel set - if
-#       omitted, 01a/01b still run but scoring is skipped. Runs as an array
+#       coverage for every sample. ALSO requires --control-tag-dir=<path>,
+#       since this step reads 04_pos2bed's peak-assignment output too, not
+#       just dmel coverage. Optional even with --align_dmel set - if
+#       omitted (or --control-tag-dir is omitted), 01a/01b still run but
+#       scoring is skipped. Runs as an array
 #       job, one task per unique regulator_symbol in <lookup_file> (not one
 #       per lookup row/replicate). See hahn_region_scoring.R's own header
 #       for additional tunable parameters (promoter window, signal window,
@@ -100,11 +111,16 @@
 #       row/replicate). --control-bed points at a combined control 5'
 #       cut-site BED (see README: Building the control samples).
 #
-#   --control-tag-dir=<path>  (default: results/tag_dirs/control_MNase)
+#   --control-tag-dir=<path>  (default: none - HOMER peak-calling steps skipped)
 #       Path to the HOMER control tag directory built by maketagdir_control.sh
 #       (manual, standalone step - see README: Building the control samples).
-#       Passed through to 03_findpeaks.sh. Change this if you've archived the
-#       control tag directory somewhere other than the default location.
+#       Optional - if omitted, 03_findpeaks.sh, 04_pos2bed.sh,
+#       05_annotatepeaks.sh, and 06_hahn_region_scoring.sh (which reads
+#       04_pos2bed's output too) are all skipped entirely, rather than
+#       requiring a control tag directory to exist at some default location.
+#       02_maketagdir_samples.sh still runs either way. If provided, it's
+#       passed through to 03_findpeaks.sh, and must already exist (built via
+#       maketagdir_control.sh) with a valid tagInfo.txt.
 #
 # Genome FASTA and GTF paths for the annotatePeaks step are hardcoded inside
 # 05_annotatepeaks.sh itself, not passed as arguments here.
@@ -137,7 +153,7 @@ TSS_BED=""
 CONTROL_COVERAGE=""
 PROMOTER_BED=""
 CONTROL_BED=""
-CONTROL_TAG_DIR="results/tag_dirs/control_MNase"
+CONTROL_TAG_DIR=""
 
 for arg in "$@"; do
     case "${arg}" in
@@ -191,7 +207,7 @@ for arg in "$@"; do
 done
 
 if [[ -z "${LOOKUP_FILE}" ]]; then
-    echo "ERROR: lookup_file is required. Usage: submit_pipeline.sh <lookup_file> [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel [--tss-bed=TSS.bed]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]]"
+    echo "ERROR: lookup_file is required. Usage: submit_pipeline.sh <lookup_file> [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] [--control-tag-dir=PATH]"
     exit 1
 fi
 
@@ -292,16 +308,23 @@ if [[ ! -f "${LOOKUP_FILE}" ]]; then
     exit 1
 fi
 
-if [[ ! -d "${CONTROL_TAG_DIR}" ]]; then
-    echo "ERROR: Control tag directory not found: ${CONTROL_TAG_DIR}"
-    echo "  Run maketagdir_control.sh first to build the control tag directory"
-    echo "  (this is a manual, one-time step, not part of this automated pipeline)."
-    exit 1
-fi
+# --control-tag-dir is optional - if omitted, 03_findpeaks/04_pos2bed/
+# 05_annotatepeaks (and 06_hahn_region_scoring, which reads 04_pos2bed's
+# output too) are simply skipped rather than requiring a control tag
+# directory to exist at some default location. If provided, though, it
+# should actually exist and look complete.
+if [[ -n "${CONTROL_TAG_DIR}" ]]; then
+    if [[ ! -d "${CONTROL_TAG_DIR}" ]]; then
+        echo "ERROR: Control tag directory not found: ${CONTROL_TAG_DIR}"
+        echo "  Run maketagdir_control.sh first to build the control tag directory"
+        echo "  (this is a manual, one-time step, not part of this automated pipeline)."
+        exit 1
+    fi
 
-if [[ ! -f "${CONTROL_TAG_DIR}/tagInfo.txt" ]]; then
-    echo "ERROR: ${CONTROL_TAG_DIR}/tagInfo.txt not found - control tag directory looks incomplete"
-    exit 1
+    if [[ ! -f "${CONTROL_TAG_DIR}/tagInfo.txt" ]]; then
+        echo "ERROR: ${CONTROL_TAG_DIR}/tagInfo.txt not found - control tag directory looks incomplete"
+        exit 1
+    fi
 fi
 
 # Validate --start-at is a real step
@@ -328,8 +351,13 @@ if [[ ( "${START_STEP}" == "01c_filter_bam" || "${START_STEP}" == "01d_genomecov
     exit 1
 fi
 
-if [[ "${START_STEP}" == "06_hahn_region_scoring" && -z "${TSS_BED}" ]]; then
-    echo "ERROR: --start-at=06_hahn_region_scoring requires --tss-bed=<path> (step is skipped without it)"
+if [[ ( "${START_STEP}" == "03_findpeaks" || "${START_STEP}" == "04_pos2bed" || "${START_STEP}" == "05_annotatepeaks" ) && -z "${CONTROL_TAG_DIR}" ]]; then
+    echo "ERROR: --start-at=${START_STEP} requires --control-tag-dir=<path> (these steps are skipped without it)"
+    exit 1
+fi
+
+if [[ "${START_STEP}" == "06_hahn_region_scoring" && ( -z "${TSS_BED}" || -z "${CONTROL_TAG_DIR}" ) ]]; then
+    echo "ERROR: --start-at=06_hahn_region_scoring requires both --tss-bed=<path> and --control-tag-dir=<path> (step is skipped without either - it reads 04_pos2bed's output, which needs a control tag directory to exist)"
     exit 1
 fi
 
@@ -360,7 +388,7 @@ echo "Lookup file: ${LOOKUP_FILE}"
 echo "Format: Paired-end (regulator, replicate, fastq_1, fastq_2)"
 echo "Array size (# of samples): ${ARRAY_SIZE}"
 echo "Unique regulators (for 06/07 array size): ${UNIQUE_REGULATOR_COUNT}"
-echo "Control tag directory: ${CONTROL_TAG_DIR}"
+echo "Control tag directory: $( [[ -n "${CONTROL_TAG_DIR}" ]] && echo "${CONTROL_TAG_DIR}" || echo "not provided - 03_findpeaks/04_pos2bed/05_annotatepeaks/06_hahn_region_scoring will be skipped (pass --control-tag-dir=<path> to enable)" )"
 echo "BAM type for tag directories: ${BAM_TYPE}"
 echo "D. melanogaster spike-in steps: $( [[ "${ALIGN_DMEL}" == "true" ]] && echo "enabled (--align_dmel)" || echo "disabled (default - pass --align_dmel to enable)" )"
 echo "Filter+genomecov 5' cut-site steps: $( [[ "${FILTER_GENOMECOV}" == "true" ]] && echo "enabled (--filter_genomecov, regions=${INCLUDE_REGIONS_BED})" || echo "disabled (default - pass --filter_genomecov --include-regions=... to enable)" )"
@@ -435,8 +463,13 @@ for i in "${!STEP_ORDER[@]}"; do
         continue
     fi
 
-    if [[ "${step}" == "06_hahn_region_scoring" && -z "${TSS_BED}" ]]; then
-        echo "-- Skipping ${step} (no --tss-bed provided; 01a/01b still ran if --align_dmel was set)"
+    if [[ ( "${step}" == "03_findpeaks" || "${step}" == "04_pos2bed" || "${step}" == "05_annotatepeaks" ) && -z "${CONTROL_TAG_DIR}" ]]; then
+        echo "-- Skipping ${step} (no --control-tag-dir provided; 02_maketagdir_samples still ran)"
+        continue
+    fi
+
+    if [[ "${step}" == "06_hahn_region_scoring" && ( -z "${TSS_BED}" || -z "${CONTROL_TAG_DIR}" ) ]]; then
+        echo "-- Skipping ${step} (requires both --tss-bed and --control-tag-dir; 01a/01b still ran if --align_dmel was set)"
         continue
     fi
 
@@ -533,7 +566,7 @@ echo "Pipeline Submission Complete"
 echo "================================"
 echo ""
 echo "Job dependencies:"
-echo "  (control_MNase tag dir already built manually via maketagdir_control.sh)"
+echo "  ($( [[ -n "${CONTROL_TAG_DIR}" ]] && echo "control tag dir: ${CONTROL_TAG_DIR} (already built manually via maketagdir_control.sh)" || echo "no --control-tag-dir provided - peak-calling steps were skipped" ))"
 for step in "${STEP_ORDER[@]}"; do
     if [[ -n "${JOBIDS[$step]:-}" ]]; then
         echo "  ${step}: ${JOBIDS[$step]}"
@@ -541,8 +574,10 @@ for step in "${STEP_ORDER[@]}"; do
         echo "  ${step}: (disabled - pass --align_dmel to enable)"
     elif [[ ( "${step}" == "01c_filter_bam" || "${step}" == "01d_genomecov_5p" ) && "${FILTER_GENOMECOV}" != "true" ]]; then
         echo "  ${step}: (disabled - pass --filter_genomecov --include-regions=... to enable)"
-    elif [[ "${step}" == "06_hahn_region_scoring" && -z "${TSS_BED}" ]]; then
-        echo "  ${step}: (skipped - no --tss-bed provided)"
+    elif [[ ( "${step}" == "03_findpeaks" || "${step}" == "04_pos2bed" || "${step}" == "05_annotatepeaks" ) && -z "${CONTROL_TAG_DIR}" ]]; then
+        echo "  ${step}: (skipped - no --control-tag-dir provided)"
+    elif [[ "${step}" == "06_hahn_region_scoring" && ( -z "${TSS_BED}" || -z "${CONTROL_TAG_DIR}" ) ]]; then
+        echo "  ${step}: (skipped - requires both --tss-bed and --control-tag-dir)"
     elif [[ "${step}" == "07_promoter_scoring" && ( -z "${PROMOTER_BED}" || -z "${CONTROL_BED}" ) ]]; then
         echo "  ${step}: (skipped - --promoter-bed/--control-bed not both provided)"
     else
