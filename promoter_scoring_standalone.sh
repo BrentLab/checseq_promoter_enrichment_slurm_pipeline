@@ -22,7 +22,7 @@ set -euo pipefail
 #
 # Usage:
 #   sbatch --array=1-N --export=ALL,PIPELINE_SCRIPT_DIR=/absolute/path/to/pipeline/dir \
-#       promoter_scoring_lookup.sh <lookup_file> <promoter_bed> \
+#       promoter_scoring_standalone.sh <lookup_file> <promoter_bed> \
 #       [--genomecov-dir=<path>] [--output-dir=<path>] [additional promoter_scoring.R flags...]
 #
 # <lookup_file>: TSV with header, one row per comparison, e.g.:
