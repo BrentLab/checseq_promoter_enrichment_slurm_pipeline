@@ -1,10 +1,8 @@
 #!/bin/bash
-# Convenience script to submit the automated ChEC-seq pipeline jobs with proper
-# dependencies. Run after 00_prepare.sh and configuring parameterized paths in
-# each script.
 #
-# OPTIONAL PREREQUISITE: if you want HOMER peak calling (03_findpeaks.sh
-# onward, plus 06_hahn_region_scoring.sh), maketagdir_control.sh must first
+# OPTIONAL PREREQUISITE: if you want HOMER peak calling (03_findpeaks.sh,
+# 04_pos2bed.sh, 05_annotatepeaks.sh plus 06_hahn_region_scoring.sh),
+# maketagdir_control.sh must first
 # be run manually to build a control tag directory, then passed via
 # --control-tag-dir=<path>. It is not part of the automated chain below,
 # since the control tag directory is typically built once and reused across
@@ -12,10 +10,32 @@
 # --control-tag-dir, those steps are simply skipped - see its entry below.
 #
 # Usage: submit_pipeline.sh <lookup_file> \
+#     --primary-bowtie-index=PATH --primary-genome-fasta=PATH \
 #     [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] \
-#     [--align_dmel [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] \
+#     [--align_dmel --spikein-bowtie-index=PATH [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] \
 #     [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] \
-#     [--control-tag-dir=PATH]
+#     [--control-tag-dir=PATH --primary-gtf-file=PATH]
+#
+#   --primary-bowtie-index=<path>   (required - no default)
+#       Bowtie2 index prefix for 01_align.sh, the main organism alignment.
+#       01_align.sh always runs, so this is always required.
+#
+#   --primary-genome-fasta=<path>   (required - no default)
+#       Reference genome FASTA. Used by 02_maketagdir_samples.sh (always
+#       runs, so this is always required) and, if --control-tag-dir is also
+#       set, by 05_annotatepeaks.sh too (same file, passed to both).
+#
+#   --spikein-bowtie-index=<path>   (required only if --align_dmel is set)
+#       Bowtie2 index prefix for 01a_map_to_dmel.sh, the D. melanogaster
+#       spike-in alignment. Only needed - and only required - when
+#       --align_dmel is set, since 01a_map_to_dmel.sh isn't submitted at
+#       all otherwise. Omitting both --align_dmel and this flag together is
+#       fine and produces no error.
+#
+#   --primary-gtf-file=<path>   (required only if --control-tag-dir is set)
+#       GTF for 05_annotatepeaks.sh's peak annotation. Only needed - and
+#       only required - when --control-tag-dir is set, since
+#       05_annotatepeaks.sh isn't submitted at all otherwise.
 #
 #   --bam-type=nuclear|full   (default: nuclear)
 #       Which BAM 01b_dmel_normalized_coverage.sh, 01c_filter_bam.sh,
@@ -122,9 +142,6 @@
 #       passed through to 03_findpeaks.sh, and must already exist (built via
 #       maketagdir_control.sh) with a valid tagInfo.txt.
 #
-# Genome FASTA and GTF paths for the annotatePeaks step are hardcoded inside
-# 05_annotatepeaks.sh itself, not passed as arguments here.
-
 set -euo pipefail
 
 # Directory this script itself lives in - lets you invoke submit_pipeline.sh
@@ -154,6 +171,10 @@ CONTROL_COVERAGE=""
 PROMOTER_BED=""
 CONTROL_BED=""
 CONTROL_TAG_DIR=""
+PRIMARY_BOWTIE_INDEX=""
+SPIKEIN_BOWTIE_INDEX=""
+PRIMARY_GENOME_FASTA=""
+PRIMARY_GTF_FILE=""
 
 for arg in "$@"; do
     case "${arg}" in
@@ -191,6 +212,18 @@ for arg in "$@"; do
         --control-tag-dir=*)
             CONTROL_TAG_DIR="${arg#--control-tag-dir=}"
             ;;
+        --primary-bowtie-index=*)
+            PRIMARY_BOWTIE_INDEX="${arg#--primary-bowtie-index=}"
+            ;;
+        --spikein-bowtie-index=*)
+            SPIKEIN_BOWTIE_INDEX="${arg#--spikein-bowtie-index=}"
+            ;;
+        --primary-genome-fasta=*)
+            PRIMARY_GENOME_FASTA="${arg#--primary-genome-fasta=}"
+            ;;
+        --primary-gtf-file=*)
+            PRIMARY_GTF_FILE="${arg#--primary-gtf-file=}"
+            ;;
         --*)
             echo "ERROR: Unrecognized option: ${arg}"
             exit 1
@@ -207,7 +240,7 @@ for arg in "$@"; do
 done
 
 if [[ -z "${LOOKUP_FILE}" ]]; then
-    echo "ERROR: lookup_file is required. Usage: submit_pipeline.sh <lookup_file> [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] [--control-tag-dir=PATH]"
+    echo "ERROR: lookup_file is required. Usage: submit_pipeline.sh <lookup_file> --primary-bowtie-index=PATH --primary-genome-fasta=PATH [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel --spikein-bowtie-index=PATH [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] [--control-tag-dir=PATH --primary-gtf-file=PATH]"
     exit 1
 fi
 
@@ -327,6 +360,54 @@ if [[ -n "${CONTROL_TAG_DIR}" ]]; then
     fi
 fi
 
+# --primary-bowtie-index and --primary-genome-fasta are required unconditionally:
+# 01_align.sh and 02_maketagdir_samples.sh both always run, and both need
+# them (no default in either script - see their own headers).
+if [[ -z "${PRIMARY_BOWTIE_INDEX}" ]]; then
+    echo "ERROR: --primary-bowtie-index=<path> is required (01_align.sh always runs and needs a bowtie2 index)"
+    exit 1
+fi
+if [[ -z "${PRIMARY_GENOME_FASTA}" ]]; then
+    echo "ERROR: --primary-genome-fasta=<path> is required (02_maketagdir_samples.sh always runs and needs it)"
+    exit 1
+fi
+if [[ ! -f "${PRIMARY_GENOME_FASTA}" ]]; then
+    echo "ERROR: --primary-genome-fasta file not found: ${PRIMARY_GENOME_FASTA}"
+    exit 1
+fi
+
+# --spikein-bowtie-index is only required if --align_dmel is set, since
+# 01a_map_to_dmel.sh (which needs it) is only submitted in that case - see
+# the user's explicit request: no error for a missing dmel index when the
+# dmel branch (and everything downstream of it, incl. 06_hahn_region_scoring)
+# isn't even running.
+if [[ "${ALIGN_DMEL}" == "true" && -z "${SPIKEIN_BOWTIE_INDEX}" ]]; then
+    echo "ERROR: --align_dmel requires --spikein-bowtie-index=<path> (01a_map_to_dmel.sh needs a D. melanogaster bowtie2 index)"
+    exit 1
+fi
+
+# --primary-gtf-file is only required if --control-tag-dir is set, since
+# 05_annotatepeaks.sh (which needs it) is only submitted in that case.
+if [[ -n "${CONTROL_TAG_DIR}" && -z "${PRIMARY_GTF_FILE}" ]]; then
+    echo "ERROR: --control-tag-dir requires --primary-gtf-file=<path> (05_annotatepeaks.sh needs a GTF for peak annotation)"
+    exit 1
+fi
+if [[ -n "${PRIMARY_GTF_FILE}" && ! -f "${PRIMARY_GTF_FILE}" ]]; then
+    echo "ERROR: --primary-gtf-file file not found: ${PRIMARY_GTF_FILE}"
+    exit 1
+fi
+
+# Bowtie2 indexes are a filename PREFIX, not a single real file (the actual
+# files are <prefix>.1.bt2, <prefix>.2.bt2, etc., or .bt2l for large
+# genomes) - a strict -f check on the prefix itself would always fail, so
+# this is a soft warning rather than a hard requirement.
+if [[ -n "${PRIMARY_BOWTIE_INDEX}" && ! -f "${PRIMARY_BOWTIE_INDEX}.1.bt2" && ! -f "${PRIMARY_BOWTIE_INDEX}.1.bt2l" ]]; then
+    echo "WARNING: --primary-bowtie-index=${PRIMARY_BOWTIE_INDEX} - no ${PRIMARY_BOWTIE_INDEX}.1.bt2(l) found; double check this is the correct bowtie2 index prefix"
+fi
+if [[ -n "${SPIKEIN_BOWTIE_INDEX}" && ! -f "${SPIKEIN_BOWTIE_INDEX}.1.bt2" && ! -f "${SPIKEIN_BOWTIE_INDEX}.1.bt2l" ]]; then
+    echo "WARNING: --spikein-bowtie-index=${SPIKEIN_BOWTIE_INDEX} - no ${SPIKEIN_BOWTIE_INDEX}.1.bt2(l) found; double check this is the correct bowtie2 index prefix"
+fi
+
 # Validate --start-at is a real step
 START_INDEX=-1
 for i in "${!STEP_ORDER[@]}"; do
@@ -389,6 +470,10 @@ echo "Format: Paired-end (regulator, replicate, fastq_1, fastq_2)"
 echo "Array size (# of samples): ${ARRAY_SIZE}"
 echo "Unique regulators (for 06/07 array size): ${UNIQUE_REGULATOR_COUNT}"
 echo "Control tag directory: $( [[ -n "${CONTROL_TAG_DIR}" ]] && echo "${CONTROL_TAG_DIR}" || echo "not provided - 03_findpeaks/04_pos2bed/05_annotatepeaks/06_hahn_region_scoring will be skipped (pass --control-tag-dir=<path> to enable)" )"
+echo "Primary bowtie2 index: ${PRIMARY_BOWTIE_INDEX}"
+echo "Spike-in (dmel) bowtie2 index: $( [[ -n "${SPIKEIN_BOWTIE_INDEX}" ]] && echo "${SPIKEIN_BOWTIE_INDEX}" || echo "not provided (only needed with --align_dmel)" )"
+echo "Genome FASTA: ${PRIMARY_GENOME_FASTA}"
+echo "GTF file: $( [[ -n "${PRIMARY_GTF_FILE}" ]] && echo "${PRIMARY_GTF_FILE}" || echo "not provided (only needed with --control-tag-dir)" )"
 echo "BAM type for tag directories: ${BAM_TYPE}"
 echo "D. melanogaster spike-in steps: $( [[ "${ALIGN_DMEL}" == "true" ]] && echo "enabled (--align_dmel)" || echo "disabled (default - pass --align_dmel to enable)" )"
 echo "Filter+genomecov 5' cut-site steps: $( [[ "${FILTER_GENOMECOV}" == "true" ]] && echo "enabled (--filter_genomecov, regions=${INCLUDE_REGIONS_BED})" || echo "disabled (default - pass --filter_genomecov --include-regions=... to enable)" )"
@@ -527,6 +612,18 @@ for i in "${!STEP_ORDER[@]}"; do
         fi
         if [[ "${step}" == "03_findpeaks" ]]; then
             extra_args+=("--control-tag-dir=${CONTROL_TAG_DIR}")
+        fi
+        if [[ "${step}" == "01_align" ]]; then
+            extra_args+=("--bowtie-index=${PRIMARY_BOWTIE_INDEX}")
+        fi
+        if [[ "${step}" == "01a_map_to_dmel" ]]; then
+            extra_args+=("--bowtie-index=${SPIKEIN_BOWTIE_INDEX}")
+        fi
+        if [[ "${step}" == "02_maketagdir_samples" ]]; then
+            extra_args+=("--genome-fasta=${PRIMARY_GENOME_FASTA}")
+        fi
+        if [[ "${step}" == "05_annotatepeaks" ]]; then
+            extra_args+=("--genome-fasta=${PRIMARY_GENOME_FASTA}" "--gtf-file=${PRIMARY_GTF_FILE}")
         fi
     fi
 

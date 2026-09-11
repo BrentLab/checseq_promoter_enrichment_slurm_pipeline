@@ -12,10 +12,13 @@ set -euo pipefail
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Usage: 02_maketagdir_samples.sh <lookup_file> [bam_type] [--authors_orig]
+# Usage: 02_maketagdir_samples.sh <lookup_file> [bam_type] --genome-fasta=<path> [--authors_orig]
 #   bam_type: "nuclear" (default) or "full"
 #     nuclear -> {regulator}_{replicate}_nuclear.bam (chrM filtered out)
 #     full    -> {regulator}_{replicate}.bam         (all chromosomes, incl. chrM)
+#   --genome-fasta=<path>: reference genome FASTA passed to makeTagDirectory's
+#     -genome flag for GC-bias diagnostics. Required (no default - this
+#     varies by organism/genome build). Can appear anywhere in the args.
 #   --authors_orig: use -keepAll instead of -unique -mapq 10, matching the
 #     original Mahendrawada et al. makeTagDirectory calls (which kept all
 #     alignments, including multi-mappers/low-MAPQ reads, rather than HOMER's
@@ -31,23 +34,36 @@ set -euo pipefail
 #   is not passed to makeTagDirectory at all, matching the original scripts'
 #   behavior of relying on HOMER's own autocorrelation estimate instead.
 
-# Pull --authors_orig out of the argument list wherever it appears, leaving
-# the remaining positional args (lookup_file, bam_type) in order.
+# Pull --authors_orig and --genome-fasta out of the argument list wherever
+# they appear, leaving the remaining positional args (lookup_file, bam_type)
+# in order.
 AUTHORS_ORIG=false
+GENOME_FASTA=""
 POSITIONAL=()
 for arg in "$@"; do
-    if [[ "${arg}" == "--authors_orig" ]]; then
-        AUTHORS_ORIG=true
-    else
-        POSITIONAL+=("${arg}")
-    fi
+    case "${arg}" in
+        --authors_orig)
+            AUTHORS_ORIG=true
+            ;;
+        --genome-fasta=*)
+            GENOME_FASTA="${arg#--genome-fasta=}"
+            ;;
+        *)
+            POSITIONAL+=("${arg}")
+            ;;
+    esac
 done
 
 LOOKUP_FILE="${POSITIONAL[0]:?ERROR: lookup_file is required}"
 BAM_TYPE="${POSITIONAL[1]:-nuclear}"
-GENOME_FASTA="/ref/mblab/data/S288C_R64/S288C_reference_genome_R64-5-1_20240529/S288C_reference_sequence_R64-5-1_20240529_chr_normalized.fa"
 OUTPUT_DIR="results"
 LOG_DIR="logs"
+
+if [[ -z "${GENOME_FASTA}" ]]; then
+    echo "ERROR: --genome-fasta=<path> is required (no default - this varies by organism/genome build)"
+    echo "Usage: 02_maketagdir_samples.sh <lookup_file> [bam_type] --genome-fasta=<path> [--authors_orig]"
+    exit 1
+fi
 
 if [[ "${AUTHORS_ORIG}" == "true" ]]; then
     READ_FILTER_FLAGS="-keepAll"

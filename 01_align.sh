@@ -12,25 +12,29 @@ set -uo pipefail
 # ============================================================================
 # CONFIGURATION - Fill in these paths before running
 # ============================================================================
-SCER_BOWTIE_INDEX="/ref/mblab/data/S288C_R64/S288C_reference_genome_R64-5-1_20240529/bowtie2_index/S288C_reference_sequence_R64-5-1_20240529_chr_normalized"
 OUTPUT_DIR="results"
 LOG_DIR="logs"
 
-# Mitochondrial chromosome name, as it appears in the reference/BAM - varies
-# by organism/genome build (e.g. "chrM" for many S. cerevisiae assemblies,
-# something else entirely for other reference genomes like KN99). Override
-# with --mito-chrom=<name>; can appear anywhere in the args.
-MITO_CHROM="chrM"
+# BOWTIE_INDEX and MITO_CHROM have no defaults - both are required and vary
+# by organism/genome build (e.g. mito chromosome is "chrM" for many
+# S. cerevisiae assemblies, something else entirely for other reference
+# genomes like KN99). Set via --bowtie-index=<path> and --mito-chrom=<name>;
+# either can appear anywhere in the args.
+BOWTIE_INDEX=""
+MITO_CHROM=""
 
 # ============================================================================
 # ARGUMENT PARSING
 # ============================================================================
-# Usage: 01_align.sh <lookup_file> [--mito-chrom=<name>]
+# Usage: 01_align.sh <lookup_file> --bowtie-index=<path> --mito-chrom=<name>
 POSITIONAL=()
 for arg in "$@"; do
     case "${arg}" in
         --mito-chrom=*)
             MITO_CHROM="${arg#--mito-chrom=}"
+            ;;
+        --bowtie-index=*)
+            BOWTIE_INDEX="${arg#--bowtie-index=}"
             ;;
         *)
             POSITIONAL+=("${arg}")
@@ -38,7 +42,19 @@ for arg in "$@"; do
     esac
 done
 
-LOOKUP_FILE="${POSITIONAL[0]:?ERROR: lookup_file is required. Usage: 01_align.sh <lookup_file> [--mito-chrom=<name>]}"
+if [[ -z "${BOWTIE_INDEX}" ]]; then
+    echo "ERROR: --bowtie-index=<path> is required (no default - this varies by organism/genome build)"
+    echo "Usage: 01_align.sh <lookup_file> --bowtie-index=<path> --mito-chrom=<name>"
+    exit 1
+fi
+
+if [[ -z "${MITO_CHROM}" ]]; then
+    echo "ERROR: --mito-chrom=<name> is required (no default - this varies by organism/genome build)"
+    echo "Usage: 01_align.sh <lookup_file> --bowtie-index=<path> --mito-chrom=<name>"
+    exit 1
+fi
+
+LOOKUP_FILE="${POSITIONAL[0]:?ERROR: lookup_file is required. Usage: 01_align.sh <lookup_file> --bowtie-index=<path> --mito-chrom=<name>}"
 
 # ============================================================================
 # BOWTIE PARAMETERS (from methods) - paired-end
@@ -136,13 +152,13 @@ UNMAPPED_R1="${SAMPLE_DIR}/${REGULATOR}_${REPLICATE}_unmapped_R1.fastq.gz"
 UNMAPPED_R2="${SAMPLE_DIR}/${REGULATOR}_${REPLICATE}_unmapped_R2.fastq.gz"
 
 echo "Running bowtie2 alignment (paired-end)..."
-echo "  Index: ${SCER_BOWTIE_INDEX}"
+echo "  Index: ${BOWTIE_INDEX}"
 echo "  Params: ${BOWTIE_PARAMS}"
 
 bowtie2 \
     -p 8 \
     -q \
-    -x "${SCER_BOWTIE_INDEX}" \
+    -x "${BOWTIE_INDEX}" \
     ${BOWTIE_PARAMS} \
     --un-conc-gz "${UNMAPPED_PREFIX}" \
     -1 "$FASTQ_R1" \
