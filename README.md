@@ -302,9 +302,6 @@ to `07_promoter_scoring.sh`/`promoter_scoring.R`).
 # Before each run: stage the matching archived control tag directory
 cp -r control_data/nuclear/tag_dir/control_MNase results/tag_dirs/control_MNase
 
-# Validate your lookup file
-bash 00_prepare.sh samples.tsv
-
 # Submit the rest of the pipeline (can be run from any directory)
 bash submit_pipeline.sh samples.tsv
 
