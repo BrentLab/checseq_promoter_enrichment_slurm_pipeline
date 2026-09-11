@@ -73,128 +73,26 @@ MED1	rep1	/path/to/MED1_rep1_R1.fastq.gz	/path/to/MED1_rep1_R2.fastq.gz
   `01_align.sh` like any other sample; its resulting BAM and stats file are
   what you point `maketagdir_control.sh` at.
 
-## Hardcoded reference paths
+## Command-line options
 
-These paths are set directly inside the scripts (not passed as arguments).
-Update them in-place if your reference locations change:
-
-| Script | Variable | Current value |
-|---|---|---|
-| `01_align.sh` | `SCER_BOWTIE_INDEX` | `/ref/mblab/data/S288C_R64/S288C_reference_genome_R64-5-1_20240529/bowtie2_index/S288C_reference_sequence_R64-5-1_20240529_chr_normalized` |
-| `01a_map_to_dmel.sh` | `DMEL_BOWTIE_INDEX` | `/ref/mblab/data/dmelanogaster/bowtie2_index/dmel-all-chromosome-r6.65` |
-| `03_findpeaks.sh` | `GENOME_SIZE` | `12071326` (nuclear) or `12157105` (full) - picked automatically from `bam_type`, see below |
-| `maketagdir_control.sh` / `02_maketagdir_samples.sh` | `GENOME_FASTA` | `/ref/mblab/data/S288C_R64/S288C_reference_genome_R64-5-1_20240529/S288C_reference_sequence_R64-5-1_20240529_chr_normalized.fa` |
-| `05_annotatepeaks.sh` | `GENOME_FASTA` / `GTF_FILE` | sacCer3 FASTA (above) / `sacCer3.ensGene.gtf` |
-
-## Options
-
-`submit_pipeline.sh` accepts several optional flags, in addition to the
-required `<lookup_file>`:
+`submit_pipeline.sh`'s full set of options - `--bam-type`, `--start-at`,
+`--authors-orig`, `--align_dmel`, `--tss-bed`, `--control-coverage`,
+`--filter_genomecov`, `--include-regions`, `--promoter-bed`, `--control-bed`,
+`--control-tag-dir`, `--primary-bowtie-index`, `--mito-chrom`,
+`--primary-genome-fasta`, `--spikein-bowtie-index`, and `--primary-gtf-file` -
+along with which are required vs. optional and under what conditions, are
+documented in the script's own header comment (its docstring), not
+duplicated here:
 
 ```bash
-bash submit_pipeline.sh <lookup_file> [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] \
-    [--align_dmel [--tss-bed=TSS.bed]] \
-    [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]]
+head -n 160 submit_pipeline.sh
+# or just open the file directly
 ```
 
-**`--bam-type=nuclear|full`** (default: `nuclear`)
-Which BAM `01b_dmel_normalized_coverage.sh`, `01c_filter_bam.sh`,
-`02_maketagdir_samples.sh`, and `03_findpeaks.sh` all use:
-- `nuclear` — `{regulator}_{replicate}_nuclear.bam` (chrM filtered out), genome size `12071326`
-- `full` — `{regulator}_{replicate}.bam` (all chromosomes, incl. chrM), genome size `12157105`
-
-All four scripts must agree on this, which is why the flag threads through
-to all of them automatically rather than being set independently.
-
-**`--start-at=STEP`** (default: `01_align`)
-Resume the pipeline partway through instead of resubmitting everything.
-Anything upstream of `STEP` is assumed to have already completed
-successfully; it is not resubmitted, and the step you start at is submitted
-with no dependency. Accepts any step name, with or without `.sh`:
-`01_align`, `01a_map_to_dmel`, `01b_dmel_coverage`, `01c_filter_bam`,
-`01d_genomecov_5p`, `02_maketagdir_samples`, `03_findpeaks`, `04_pos2bed`,
-`05_annotatepeaks`, `06_hahn_region_scoring`,
-`07_promoter_scoring`, `08_multiqc`.
-Starting at `01a_map_to_dmel` or `01b_dmel_coverage` also requires
-`--align_dmel`; starting at `01c_filter_bam` or `01d_genomecov_5p` also
-requires `--filter_genomecov`; starting at `06_hahn_region_scoring` also
-requires `--tss-bed=`; starting at `07_promoter_scoring` also
-requires both `--promoter-bed=` and `--control-bed=` - these steps are
-otherwise disabled/skipped entirely rather than assumed-already-complete.
-
-**`--authors-orig`** (default: off)
-Passes `--authors_orig` to both `02_maketagdir_samples.sh` and
-`03_findpeaks.sh`, matching the original Mahendrawada et al. scripts more
-closely in three ways at once:
-- `02_maketagdir_samples.sh`: `-keepAll` instead of `-unique -mapq 10` when
-  building sample tag directories (kept all alignments, including
-  multi-mappers/low-MAPQ reads)
-- `02_maketagdir_samples.sh`: skips `-fragLength` entirely — no longer
-  derives it from this sample's own `samtools stats`, letting HOMER's own
-  autocorrelation estimate run instead (the original scripts never passed
-  `-fragLength`)
-- `03_findpeaks.sh`: skips `-gsize` entirely — no longer passes the
-  hardcoded nuclear/full genome size constant, letting `findPeaks`
-  auto-estimate genome size from the tag directory instead (the original
-  scripts never passed `-gsize` either)
-
-This only affects the automated `02`/`03` steps; if you also want the
-manually-run `maketagdir_control.sh` built the same way (`-keepAll`, no
-`-fragLength`), pass `--authors_orig` to it directly.
-
-**`--align_dmel`** (default: off)
-Enables the D. melanogaster spike-in branch: `01a_map_to_dmel.sh` and
-`01b_dmel_normalized_coverage.sh`. **Off by default**, since not every
-sample set has a dmel spike-in. When off, these two steps aren't submitted
-at all — not treated as already-complete, genuinely skipped — and
-`08_multiqc`'s dependency on them is dropped automatically so it doesn't
-wait on jobs that were never submitted.
-
-**`--tss-bed=TSS.bed`**
-Enables `06_hahn_region_scoring.sh` (the Mahendrawada 2025/Donczew & Hahn
-2020 promoter-scoring method) once `--align_dmel` has produced coverage for
-every sample. **Optional even with `--align_dmel` set** — if omitted, `01a`/
-`01b` still run but scoring is skipped. Runs as an array job, one task per
-unique regulator in the lookup file (not one per row/replicate) — each
-task's own R invocation discovers and combines that regulator's own
-replicates internally. Additional tunable parameters (promoter window,
-signal window, min replicates bound) are set inside
-`06_hahn_region_scoring.sh`/`hahn_region_scoring.R` — see that
-script's own header for the full list; run it directly (once its
-dependencies exist) to override them without going through
-`submit_pipeline.sh`.
-
-**`--filter_genomecov`** (default: off, requires `--include-regions=`)
-Enables an independent, dmel-free quantification branch: `01c_filter_bam.sh`
-(region-restricted, MAPQ≥10, properly-paired BAM) → `01d_genomecov_5p.sh`
-(per-base, per-strand 5' cut-site coverage). This only needs the
-*S. cerevisiae* alignment — it works whether or not `--align_dmel` is used,
-and is meant for sample sets that don't have a dmel spike-in at all.
-Starting at `01c_filter_bam` or `01d_genomecov_5p` also requires this flag.
-
-**`--include-regions=REGIONS.bed`**
-Required when `--filter_genomecov` is set. BED file of regions
-`01c_filter_bam.sh` restricts reads to (e.g. promoters).
-
-**`--promoter-bed=PROMOTERS.bed` / `--control-bed=CONTROL.bed`**
-Both enable `07_promoter_scoring.sh` (the calling-cards-style
-promoter enrichment method) once `--filter_genomecov` has produced 5'
-cut-site coverage for every sample. **Both optional even with
-`--filter_genomecov` set** — if either is omitted, `01c`/`01d` still run but
-scoring is skipped. Runs as an array job, one task per unique regulator in
-the lookup file (not one per row/replicate) — each task's own R invocation
-discovers and combines that regulator's own replicates internally.
-`--control-bed` points at a combined control 5' cut-site
-BED (see "Building the control samples" below). Additional tunable
-parameters (pseudocount) are set inside
-`07_promoter_scoring.sh`/`promoter_scoring.R`.
-
-**`--control-tag-dir=<path>`** (default: `results/tag_dirs/control_MNase`)
-Path to the HOMER control tag directory `03_findpeaks.sh` uses as its `-i`
-background — the one built manually by `maketagdir_control.sh` (see
-"Building the control samples" below). Change this if you'd rather point
-directly at an archived control tag directory than stage/copy it into the
-default `results/tag_dirs/control_MNase` location before each run.
+That header is the authoritative source for exact flag syntax and
+conditional-requirement rules (e.g. which flags are only required when a
+particular branch is enabled) - keeping one copy avoids this README
+drifting out of sync with the script as flags change.
 
 ## Two independent promoter-quantification pathways
 
@@ -217,6 +115,31 @@ once their coverage inputs exist, with the rest of their parameters
 (promoter/signal window sizes, min replicates bound, pseudocount, core
 count) exposed as additional CLI flags — see each script's own header
 comments and `option_list` for the full set.
+
+## Ad-hoc promoter scoring against custom samples/controls/promoter sets
+
+`promoter_scoring_lookup.sh` is a standalone script (not part of
+`submit_pipeline.sh`'s automated chain) for cases that don't fit the main
+pipeline's "one shared `--control-bed` and one shared `--promoter-bed` for
+every regulator" structure - e.g. scoring individual samples or arbitrary
+sets of samples against different control conditions per comparison, or
+scoring a set of samples against a different promoter set than whatever
+`--promoter-bed` was used elsewhere in a given run. Each row of its own
+lookup file defines one independent comparison (a tagged sample/set against
+its own control), and it can be pointed at any promoter BED, not just the
+one used elsewhere.
+
+**Requires** `results/genomecov_5p/` output to already exist for every
+sample and control it will reference - i.e. `01c_filter_bam.sh` ->
+`01d_genomecov_5p.sh` must already have run (via `--filter_genomecov` in
+`submit_pipeline.sh`, or run directly) for each one before this script can
+use them.
+
+Full usage, lookup file format, and flags are documented in the script's
+own header comment, not duplicated here:
+```bash
+head -n 60 promoter_scoring_lookup.sh
+```
 
 ## Output layout
 
@@ -378,6 +301,9 @@ to `07_promoter_scoring.sh`/`promoter_scoring.R`).
 
 # Before each run: stage the matching archived control tag directory
 cp -r control_data/nuclear/tag_dir/control_MNase results/tag_dirs/control_MNase
+
+# Validate your lookup file
+bash 00_prepare.sh samples.tsv
 
 # Submit the rest of the pipeline (can be run from any directory)
 bash submit_pipeline.sh samples.tsv

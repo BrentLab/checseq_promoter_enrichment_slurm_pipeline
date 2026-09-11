@@ -1,8 +1,10 @@
 #!/bin/bash
+# Convenience script to submit the automated ChEC-seq pipeline jobs with proper
+# dependencies. Run after 00_prepare.sh and configuring parameterized paths in
+# each script.
 #
-# OPTIONAL PREREQUISITE: if you want HOMER peak calling (03_findpeaks.sh,
-# 04_pos2bed.sh, 05_annotatepeaks.sh plus 06_hahn_region_scoring.sh),
-# maketagdir_control.sh must first
+# OPTIONAL PREREQUISITE: if you want HOMER peak calling (03_findpeaks.sh
+# onward, plus 06_hahn_region_scoring.sh), maketagdir_control.sh must first
 # be run manually to build a control tag directory, then passed via
 # --control-tag-dir=<path>. It is not part of the automated chain below,
 # since the control tag directory is typically built once and reused across
@@ -10,7 +12,7 @@
 # --control-tag-dir, those steps are simply skipped - see its entry below.
 #
 # Usage: submit_pipeline.sh <lookup_file> \
-#     --primary-bowtie-index=PATH --primary-genome-fasta=PATH \
+#     --primary-bowtie-index=PATH --mito-chrom=NAME --primary-genome-fasta=PATH \
 #     [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] \
 #     [--align_dmel --spikein-bowtie-index=PATH [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] \
 #     [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] \
@@ -18,6 +20,12 @@
 #
 #   --primary-bowtie-index=<path>   (required - no default)
 #       Bowtie2 index prefix for 01_align.sh, the main organism alignment.
+#       01_align.sh always runs, so this is always required.
+#
+#   --mito-chrom=<name>   (required - no default)
+#       Mitochondrial chromosome name, as it appears in the reference/BAM,
+#       for 01_align.sh's nuclear/mito BAM split (e.g. "chrM" for many
+#       S. cerevisiae assemblies - varies by organism/genome build).
 #       01_align.sh always runs, so this is always required.
 #
 #   --primary-genome-fasta=<path>   (required - no default)
@@ -172,6 +180,7 @@ PROMOTER_BED=""
 CONTROL_BED=""
 CONTROL_TAG_DIR=""
 PRIMARY_BOWTIE_INDEX=""
+MITO_CHROM=""
 SPIKEIN_BOWTIE_INDEX=""
 PRIMARY_GENOME_FASTA=""
 PRIMARY_GTF_FILE=""
@@ -215,6 +224,9 @@ for arg in "$@"; do
         --primary-bowtie-index=*)
             PRIMARY_BOWTIE_INDEX="${arg#--primary-bowtie-index=}"
             ;;
+        --mito-chrom=*)
+            MITO_CHROM="${arg#--mito-chrom=}"
+            ;;
         --spikein-bowtie-index=*)
             SPIKEIN_BOWTIE_INDEX="${arg#--spikein-bowtie-index=}"
             ;;
@@ -240,7 +252,7 @@ for arg in "$@"; do
 done
 
 if [[ -z "${LOOKUP_FILE}" ]]; then
-    echo "ERROR: lookup_file is required. Usage: submit_pipeline.sh <lookup_file> --primary-bowtie-index=PATH --primary-genome-fasta=PATH [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel --spikein-bowtie-index=PATH [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] [--control-tag-dir=PATH --primary-gtf-file=PATH]"
+    echo "ERROR: lookup_file is required. Usage: submit_pipeline.sh <lookup_file> --primary-bowtie-index=PATH --mito-chrom=NAME --primary-genome-fasta=PATH [--bam-type=nuclear|full] [--start-at=STEP] [--authors-orig] [--align_dmel --spikein-bowtie-index=PATH [--tss-bed=TSS.bed [--control-coverage=CONTROL.bedgraph]]] [--filter_genomecov --include-regions=REGIONS.bed [--promoter-bed=PROMOTERS.bed --control-bed=CONTROL.bed]] [--control-tag-dir=PATH --primary-gtf-file=PATH]"
     exit 1
 fi
 
@@ -360,11 +372,16 @@ if [[ -n "${CONTROL_TAG_DIR}" ]]; then
     fi
 fi
 
-# --primary-bowtie-index and --primary-genome-fasta are required unconditionally:
-# 01_align.sh and 02_maketagdir_samples.sh both always run, and both need
-# them (no default in either script - see their own headers).
+# --primary-bowtie-index, --mito-chrom, and --primary-genome-fasta are
+# required unconditionally: 01_align.sh and 02_maketagdir_samples.sh both
+# always run, and both need them (no default in either script - see their
+# own headers).
 if [[ -z "${PRIMARY_BOWTIE_INDEX}" ]]; then
     echo "ERROR: --primary-bowtie-index=<path> is required (01_align.sh always runs and needs a bowtie2 index)"
+    exit 1
+fi
+if [[ -z "${MITO_CHROM}" ]]; then
+    echo "ERROR: --mito-chrom=<name> is required (01_align.sh always runs and needs the mitochondrial chromosome name for its nuclear/mito BAM split - this varies by organism/genome build, e.g. 'chrM' for many S. cerevisiae assemblies)"
     exit 1
 fi
 if [[ -z "${PRIMARY_GENOME_FASTA}" ]]; then
@@ -471,6 +488,7 @@ echo "Array size (# of samples): ${ARRAY_SIZE}"
 echo "Unique regulators (for 06/07 array size): ${UNIQUE_REGULATOR_COUNT}"
 echo "Control tag directory: $( [[ -n "${CONTROL_TAG_DIR}" ]] && echo "${CONTROL_TAG_DIR}" || echo "not provided - 03_findpeaks/04_pos2bed/05_annotatepeaks/06_hahn_region_scoring will be skipped (pass --control-tag-dir=<path> to enable)" )"
 echo "Primary bowtie2 index: ${PRIMARY_BOWTIE_INDEX}"
+echo "Mitochondrial chromosome name: ${MITO_CHROM}"
 echo "Spike-in (dmel) bowtie2 index: $( [[ -n "${SPIKEIN_BOWTIE_INDEX}" ]] && echo "${SPIKEIN_BOWTIE_INDEX}" || echo "not provided (only needed with --align_dmel)" )"
 echo "Genome FASTA: ${PRIMARY_GENOME_FASTA}"
 echo "GTF file: $( [[ -n "${PRIMARY_GTF_FILE}" ]] && echo "${PRIMARY_GTF_FILE}" || echo "not provided (only needed with --control-tag-dir)" )"
@@ -614,7 +632,7 @@ for i in "${!STEP_ORDER[@]}"; do
             extra_args+=("--control-tag-dir=${CONTROL_TAG_DIR}")
         fi
         if [[ "${step}" == "01_align" ]]; then
-            extra_args+=("--bowtie-index=${PRIMARY_BOWTIE_INDEX}")
+            extra_args+=("--bowtie-index=${PRIMARY_BOWTIE_INDEX}" "--mito-chrom=${MITO_CHROM}")
         fi
         if [[ "${step}" == "01a_map_to_dmel" ]]; then
             extra_args+=("--bowtie-index=${SPIKEIN_BOWTIE_INDEX}")
